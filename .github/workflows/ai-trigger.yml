@@ -45,6 +45,5 @@ jobs:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
       ci_file_name: "ci.yml"
-    secrets:
-      GCP_PCW_TOKEN: ${{ secrets.PAT_TOKEN }}
+    secrets: inherit
 
