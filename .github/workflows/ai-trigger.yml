@@ -1,0 +1,57 @@
+name: AI fix trigger 
+
+on:
+  workflow_run:
+    workflows: ["__CI_WORKFLOW_NAME"]
+    types:
+      - completed
+
+permissions: 
+ contents: write
+
+jobs:
+  prepare-error:
+    runs-on: self-hosted
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+
+    outputs:
+      error_logs: ${{ steps.capture.outputs.error }}
+
+    steps:
+      - name: Download logs
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          RUN_ID=${{ github.event.workflow_run.id }}
+          REPO=${{ github.event.workflow_run.repository.full_name }}
+
+          curl --http1.1 -L \
+            --retry 3 \ 
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/$REPO/action/runs/$RUN_ID/logs \
+            -o logs.zip
+
+      - name: Extract logs
+        run: unzip -q logs.zip -d logs || true
+
+      - name: Extract error
+        id: capture
+        run: |
+           ERROR=$(grep -Ei "error|exception|failed|ci.yml" logs/**/*.txt | tail -n 200 || ture)
+
+           echo "error<<EOF" >> $GITHUB_OUTPUT
+           echo "$ERROR" >> $GITHUB_OUTPUT
+           echo "EOF" >> $GITHUB_OUTPUT
+
+  call-ai-fix:
+    needs: prepare-error
+
+    uses: Kallwik/ai-workflows/.github/workflows/AI.yml@main
+
+    with:
+      error_log: ${{ needs.prepare-error.outputs.error_logs }}
+      branch_name: ${{ github.event.workflow_run.head_branch }}
+      ci_file_name: "ci.yml"
+
+    secrets: 
+      GCP_PCW_TOKEN: ${{ secrets.PAT_TOKEN }}
