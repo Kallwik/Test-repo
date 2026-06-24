@@ -21,11 +21,11 @@ jobs:
         run: |
           RUN_ID=${{ github.event.workflow_run.id }}
           REPO=${{ github.event.workflow_run.repository.full_name }}
-          curl --http1.1 -L \
+          curl -L \
             --retry 3 \
             -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs \  # FIX: action -> actions
-            -o logs.zip
+            -o logs.zip \
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs"
 
       - name: Extract logs
         run: unzip -q logs.zip -d logs || true
