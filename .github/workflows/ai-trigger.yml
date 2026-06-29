@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   prepare-error:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     outputs:
       error_logs: ${{ steps.capture.outputs.error }}
@@ -48,6 +48,9 @@ jobs:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
       ci_file_name: "maven.yml"
+      # FIX: pass target repo explicitly so AI.yml never has to infer it
+      # from github context (which can be ambiguous in cross-repo calls)
+      repo_full_name: ${{ github.repository }}
     secrets:
       GCP_PCW_TOKEN: ${{ secrets.PAT_TOKEN }}
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
