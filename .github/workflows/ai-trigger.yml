@@ -11,8 +11,6 @@ permissions:
 
 jobs:
   prepare-error:
-    # FIX: was 'self-hosted' — no self-hosted runner is registered in target repos.
-    # Using ubuntu-22.04 (same as ai-workflows) for consistency.
     runs-on: ubuntu-22.04
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     outputs:
@@ -26,7 +24,6 @@ jobs:
           set -e
           RUN_ID=${{ github.event.workflow_run.id }}
           REPO=${{ github.event.workflow_run.repository.full_name }}
-          # FIX: removed inline comment after backslash continuation (breaks shell)
           curl --http1.1 -L \
             --retry 3 \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -39,8 +36,6 @@ jobs:
       - name: Extract error
         id: capture
         run: |
-          # FIX: replaced 'logs/**/*.txt' glob (unreliable without globstar)
-          # with find to safely recurse into subdirectories
           ERROR=$(find logs -name "*.txt" -exec grep -Ei "error|exception|failed|maven.yml" {} + | tail -n 200 || true)
           echo "error<<EOF" >> $GITHUB_OUTPUT
           echo "$ERROR" >> $GITHUB_OUTPUT
@@ -55,3 +50,4 @@ jobs:
       ci_file_name: "maven.yml"
     secrets:
       GCP_PCW_TOKEN: ${{ secrets.PAT_TOKEN }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
