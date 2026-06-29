@@ -1,4 +1,5 @@
 name: AI fix trigger
+
 on:
   workflow_run:
     workflows: ["Maven CI"]
@@ -10,22 +11,27 @@ permissions:
 
 jobs:
   prepare-error:
+    # FIX: was 'self-hosted' — no self-hosted runner is registered in target repos.
+    # Using ubuntu-22.04 (same as ai-workflows) for consistency.
     runs-on: ubuntu-22.04
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     outputs:
       error_logs: ${{ steps.capture.outputs.error }}
+
     steps:
       - name: Download logs
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
+          set -e
           RUN_ID=${{ github.event.workflow_run.id }}
           REPO=${{ github.event.workflow_run.repository.full_name }}
-          curl -L \
+          # FIX: removed inline comment after backslash continuation (breaks shell)
+          curl --http1.1 -L \
             --retry 3 \
             -H "Authorization: Bearer $GH_TOKEN" \
-            -o logs.zip \
-            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs"
+            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs" \
+            -o logs.zip
 
       - name: Extract logs
         run: unzip -q logs.zip -d logs || true
@@ -33,17 +39,19 @@ jobs:
       - name: Extract error
         id: capture
         run: |
-          ERROR=$(grep -Ei "error|exception|failed|ci.yml" logs/**/*.txt | tail -n 200 || true)  # FIX: ture -> true
+          # FIX: replaced 'logs/**/*.txt' glob (unreliable without globstar)
+          # with find to safely recurse into subdirectories
+          ERROR=$(find logs -name "*.txt" -exec grep -Ei "error|exception|failed|maven.yml" {} + | tail -n 200 || true)
           echo "error<<EOF" >> $GITHUB_OUTPUT
           echo "$ERROR" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
   call-ai-fix:
     needs: prepare-error
-    uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
+    uses: Kallwik/ai-workflows/.github/workflows/AI.yml@main
     with:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
-      ci_file_name: "ci.yml"
-    secrets: inherit
-
+      ci_file_name: "maven.yml"
+    secrets:
+      GCP_PCW_TOKEN: ${{ secrets.PAT_TOKEN }}
