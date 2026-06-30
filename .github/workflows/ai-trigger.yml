@@ -19,14 +19,14 @@ jobs:
     steps:
       - name: Download logs
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           set -e
           RUN_ID=${{ github.event.workflow_run.id }}
           REPO=${{ github.event.workflow_run.repository.full_name }}
           curl --http1.1 -L \
             --retry 3 \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $PAT_TOKEN" \
             "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs" \
             -o logs.zip
 
@@ -43,10 +43,12 @@ jobs:
 
   call-ai-fix:
     needs: prepare-error
-    uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
+    uses: Kallwik/ai-workflows/.github/workflows/AI.yml@main
     with:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
       ci_file_name: "maven.yml"
       repo_full_name: ${{ github.repository }}
-    secrets: inherit
+    secrets:
+      PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
