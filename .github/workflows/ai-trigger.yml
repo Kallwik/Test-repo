@@ -43,14 +43,15 @@ jobs:
 
   call-ai-fix:
     needs: prepare-error
-    uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
+    uses: Kallwik/ai-workflows/.github/workflows/AI.yml@main
     with:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
       ci_file_name: "maven.yml"
-      # FIX: pass target repo explicitly so AI.yml never has to infer it
-      # from github context (which can be ambiguous in cross-repo calls)
       repo_full_name: ${{ github.repository }}
-    secrets:
-      GCP_PCW_TOKEN: ${{ secrets.PAT_TOKEN }}
-      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+    # FIX: secrets: inherit forwards every secret available in this repo's
+    # context (PAT_TOKEN, GCP_SA_KEY) to AI.yml automatically, by matching
+    # secret name. No manual mapping needed, and no risk of name mismatches.
+    # Requires PAT_TOKEN + GCP_SA_KEY to be set as Kallwik org secrets
+    # (or repo secrets in this repo specifically).
+    secrets: inherit
