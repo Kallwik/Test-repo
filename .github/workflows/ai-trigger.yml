@@ -1,4 +1,3 @@
-
 name: AI fix trigger
 
 on:
@@ -14,79 +13,44 @@ permissions:
 jobs:
   prepare-error:
     runs-on: ubuntu-22.04
-
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
-
     outputs:
       error_logs: ${{ steps.capture.outputs.error }}
 
     steps:
-      - name: Validate PAT_TOKEN
-        env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          echo "PAT_TOKEN length: ${#PAT_TOKEN}"
-
-          if [ -z "$PAT_TOKEN" ]; then
-            echo "ERROR: PAT_TOKEN is empty or not set."
-            echo "Add it as a repository secret in this repo:"
-            echo "Settings > Secrets and variables > Actions"
-            echo "Value must be a valid GitHub Personal Access Token."
-            exit 1
-          fi
-
       - name: Download logs
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           set -e
-
           RUN_ID=${{ github.event.workflow_run.id }}
           REPO=${{ github.event.workflow_run.repository.full_name }}
-
-          echo "Downloading logs for:"
-          echo "Repository: $REPO"
-          echo "Run ID: $RUN_ID"
-
           curl --http1.1 -L \
             --retry 3 \
             -H "Authorization: Bearer $PAT_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs" \
             -o logs.zip
 
       - name: Extract logs
-        run: |
-          unzip -q logs.zip -d logs || true
+        run: unzip -q logs.zip -d logs || true
 
       - name: Extract error
         id: capture
         run: |
-          ERROR=$(find logs -name "*.txt" \
-            -exec grep -Ei "error|exception|failed|maven.yml" {} + \
-            | tail -n 200 || true)
-
-          echo "error<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$ERROR" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Debug extracted error
-        run: |
-          echo "================ ERROR LOGS ================"
-          echo "${{ steps.capture.outputs.error }}"
-          echo "============================================"
+          ERROR=$(find logs -name "*.txt" -exec grep -Ei "error|exception|failed|maven.yml" {} + | tail -n 200 || true)
+          echo "error<<EOF" >> $GITHUB_OUTPUT
+          echo "$ERROR" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
   call-ai-fix:
     needs: prepare-error
-
     uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
-
     with:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
       ci_file_name: "maven.yml"
       repo_full_name: ${{ github.repository }}
-
     secrets:
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
