@@ -43,7 +43,7 @@ jobs:
 
   call-ai-fix:
     needs: prepare-error
-    uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
+    uses: Kallwik/ai-workflows/.github/workflows/AI.yml@main
     with:
       error_log: ${{ needs.prepare-error.outputs.error_logs }}
       branch_name: ${{ github.event.workflow_run.head_branch }}
