@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: write
-  
+
 jobs:
   prepare-error:
     runs-on: ubuntu-22.04
