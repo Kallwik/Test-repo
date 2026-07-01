@@ -1,22 +1,18 @@
 name: AI fix trigger
-    
-on:     
-  workflow_run:     
-    workflows: ["Maven CI"]   
+on:
+  workflow_run:
+    workflows: ["Maven CI"]
     types:
       - completed
-
 permissions:
   contents: write
   id-token: write
-
 jobs:
   prepare-error:
     runs-on: ubuntu-22.04
     if: ${{ github.event.workflow_run.conclusion == 'failure' }}
     outputs:
       error_logs: ${{ steps.capture.outputs.error }}
-
     steps:
       - name: Download logs
         env:
@@ -30,10 +26,8 @@ jobs:
             -H "Authorization: Bearer $PAT_TOKEN" \
             "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/logs" \
             -o logs.zip
-
       - name: Extract logs
         run: unzip -q logs.zip -d logs || true
-
       - name: Extract error
         id: capture
         run: |
@@ -41,7 +35,6 @@ jobs:
           echo "error<<EOF" >> $GITHUB_OUTPUT
           echo "$ERROR" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
   call-ai-fix:
     needs: prepare-error
     uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
@@ -52,3 +45,5 @@ jobs:
       repo_full_name: ${{ github.repository }}
     secrets:
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
