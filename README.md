@@ -1,5 +1,5 @@
 # Maven CI Demo
-
+   
 Simple Maven project with GitHub Actions CI.
 
 ## Run locally
