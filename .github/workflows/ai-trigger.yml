@@ -1,7 +1,7 @@
 name: AI fix trigger
 
 on:
-  workflow_run:
+  workflow_run:   
     workflows: ["Maven CI"]
     types:
       - completed
