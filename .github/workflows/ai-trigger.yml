@@ -6,7 +6,7 @@ on:
       - completed
 permissions:
   contents: write
-  id-token: write
+  id-token: write   
 jobs:
   prepare-error:
     runs-on: ubuntu-22.04
