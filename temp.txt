@@ -1,0 +1,1 @@
+AI trigger installed on default branch, watching: Dev
