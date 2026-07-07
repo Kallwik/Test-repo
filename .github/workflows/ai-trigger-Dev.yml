@@ -41,7 +41,7 @@ jobs:
     needs: prepare-error
     uses: Kallwik/ai-workflows/.github/workflows/ai-fix.yml@main
     with:
-      error_log: ${{ needs.prepare-error.outputs.error_logs }}
+      error_log: ${{ needs.prepare-error.outputs.error_logs }}  
       branch_name: "Dev"
       ci_file_name: "maven.yml"
       fix_branch_name: "AI_FIX"
