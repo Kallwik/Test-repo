@@ -4,8 +4,6 @@ on:
     workflows: ["Maven CI"]
     types:
       - completed
-    branches:
-      - "Dev"  
 permissions:
   contents: write
   id-token: write
