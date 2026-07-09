@@ -15,9 +15,12 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:  
-          java-version: '14'
+          java-version: '17'
           distribution: 'temurin'
           cache: maven
 
       - name: Build and test with Maven
         run: mvn clean test
+
+      - name: AI Code Review Action
+        uses: villesau/ai-codereviewer@v2.7.0  
