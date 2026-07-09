@@ -22,5 +22,5 @@ jobs:
       - name: Build and test with Maven
         run: mvn clean test
 
-      - name: AI Code Review Action
-        uses: villesau/ai-codereviewer@v2.7.0  
+      - name: CI/CD Debugger
+        uses: przeprogramowani/gpt-debugger@0.0.5
