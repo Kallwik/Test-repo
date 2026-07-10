@@ -15,12 +15,10 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:  
-          java-version: '17'
+          java-version: '14'
           distribution: 'temurin'
           cache: maven
 
       - name: Build and test with Maven
         run: mvn clean test
 
-      - name: CI/CD Debugger
-        uses: przeprogramowani/gpt-debugger@0.0.5
