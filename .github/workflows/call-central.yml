@@ -1,6 +1,6 @@
 name: Call Central Pipeline
 
-on:
+on:  
   push:
     branches:
       - paras
