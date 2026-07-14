@@ -1,0 +1,16 @@
+name: Call Central Pipeline
+
+on:  
+  push:
+    branches:
+      - paras
+
+jobs:
+  call-central:
+    uses: ParasOrg/Central-Repo/.github/workflows/build.yml@main
+
+    with:
+      repository: Test-repo
+      branch: paras
+
+    secrets: inherit
