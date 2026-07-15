@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  update-excel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Send data to Excel
+        env:
+          TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+        run: |
+          DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          TOKEN=$(curl -s -X POST \
+            "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=$CLIENT_ID" \
+            -d "scope=https://graph.microsoft.com/.default" \
+            -d "client_secret=$CLIENT_SECRET" \
+            -d "grant_type=client_credentials" | jq -r '.access_token')
+
+          curl -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            https://graph.microsoft.com/v1.0/me/drive/items/<FILE_ID>/workbook/tables/Table1/rows/add \
+            -d "{
+              \"values\": [[
+                \"${{ github.workflow }}\",
+                \"${{ github.repository }}\",
+                \"${{ github.ref_name }}\",
+                \"${{ job.status }}\",
+                \"$DATE\",
+                \"${{ github.sha }}\"
+              ]]
+            }"
