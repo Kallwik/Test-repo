@@ -2,53 +2,30 @@ name: Log GitHub Actions to Google Sheets
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-      - main
-  pull_request:
-    branches:
-      - master
-      - main
 
 jobs:
   log-to-sheet:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Generate Timestamp
-        run: |
-          echo "DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_ENV
-
-      - name: Determine Workflow Status
-        if: always()
-        run: |
-          echo "STATUS=${{ job.status }}" >> $GITHUB_ENV
-
       - name: Send Test Data to Google Sheets
         run: |
           curl -L -X POST "${{ secrets.GOOGLE_SHEET_WEBHOOK }}" \
             -H "Content-Type: application/json" \
             -d '{
-              "issueId":"12345",
-              "status":"Open",
-              "failureCategory":"npm",
-              "shortMessage":"npm install failed",
-              "errorDescription":"Cannot find package.json",
-              "recommendedFix":"Run npm install before npm test",
-              "workflowName":"CI",
-              "branch":"master",
-              "failedStage":"Build",
-              "buildUrl":"https://github.com/test-org/test-repo/actions/runs/123456789",
-              "createdTime":"2026-07-15 21:40:00 UTC",
-              "run":"Fail"
+              "issueId": "12345",
+              "status": "Open",
+              "failureCategory": "npm",
+              "shortMessage": "npm install failed",
+              "errorDescription": "Cannot find package.json",
+              "recommendedFix": "Run npm install before npm test",
+              "workflowName": "CI",
+              "branch": "master",
+              "failedStage": "Build",
+              "buildUrl": "https://github.com/test-org/test-repo/actions/runs/123456789",
+              "createdTime": "2026-07-15 21:40:00 UTC",
+              "run": "Fail"
             }'
 
-      - name: Done
-        if: always()
-        run: echo "Logged to Google Sheets ✅"
+      - name: Finished
+        run: echo "✅ Test data sent successfully."
