@@ -24,6 +24,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Debug Token
+        run: |
+          echo "Token length: ${#TOKEN}"
+      
+          if [ -z "$TOKEN" ]; then
+            echo "TOKEN IS EMPTY"
+            exit 1
+          fi
+        env:
+          TOKEN: ${{ env.TOKEN }}
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
