@@ -30,20 +30,23 @@ jobs:
         run: |
           echo "STATUS=${{ job.status }}" >> $GITHUB_ENV
 
-      - name: Send Data to Google Sheets
-        if: always()
+      - name: Send Test Data to Google Sheets
         run: |
           curl -L -X POST "${{ secrets.GOOGLE_SHEET_WEBHOOK }}" \
             -H "Content-Type: application/json" \
             -d '{
-              "workflow":"${{ github.workflow }}",
-              "repository":"${{ github.repository }}",
-              "branch":"${{ github.ref_name }}",
-              "status":"${{ env.STATUS }}",
-              "date":"${{ env.DATE }}",
-              "commit":"${{ github.sha }}",
-              "actor":"${{ github.actor }}",
-              "run":"${{ github.run_number }}"
+              "issueId":"12345",
+              "status":"Open",
+              "failureCategory":"npm",
+              "shortMessage":"npm install failed",
+              "errorDescription":"Cannot find package.json",
+              "recommendedFix":"Run npm install before npm test",
+              "workflowName":"CI",
+              "branch":"master",
+              "failedStage":"Build",
+              "buildUrl":"https://github.com/test-org/test-repo/actions/runs/123456789",
+              "createdTime":"2026-07-15 21:40:00 UTC",
+              "run":"Fail"
             }'
 
       - name: Done
