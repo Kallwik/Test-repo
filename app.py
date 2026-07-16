@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
 import re
+import tempfile
 import hashlib
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import matplotlib.pyplot as plt
 from datetime import datetime
 
@@ -61,6 +65,117 @@ REQUIRED_COLS = [
 # Set this once and the dashboard loads automatically on every run — no manual pasting needed.
 DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1xtWH0PqfvNa0xH-ECc2czkDruKJbQqmhs7NRdCvPnYg/edit?usp=sharing'
 
+# -----------------------------------------------------------------------
+# NETWORK / PROXY HANDLING
+# On a VM behind a corporate proxy, outbound requests can fail for a few
+# different reasons: the proxy isn't picked up automatically, the proxy
+# does TLS interception so the cert chain doesn't validate, or the proxy
+# needs auth. This section centralizes all of that so it's configurable
+# from the UI instead of needing a code change every time.
+# -----------------------------------------------------------------------
+
+def _get_network_settings():
+    """Reads proxy/SSL settings from session_state, falling back to env vars
+    (HTTP_PROXY / HTTPS_PROXY / REQUESTS_CA_BUNDLE) which is what most
+    corporate VM images set at the OS level."""
+    return {
+        'http_proxy': st.session_state.get('net_http_proxy', '') or os.environ.get('HTTP_PROXY', '') or os.environ.get('http_proxy', ''),
+        'https_proxy': st.session_state.get('net_https_proxy', '') or os.environ.get('HTTPS_PROXY', '') or os.environ.get('https_proxy', ''),
+        'verify_ssl': st.session_state.get('net_verify_ssl', True),
+        'ca_bundle_path': st.session_state.get('net_ca_bundle_path', '') or os.environ.get('REQUESTS_CA_BUNDLE', ''),
+    }
+
+
+def _build_session(net):
+    """Builds a requests.Session configured with the given proxy/SSL settings
+    plus sane retries, so a flaky corporate proxy doesn't fail on the first
+    hiccup."""
+    session = requests.Session()
+
+    proxies = {}
+    if net['http_proxy']:
+        proxies['http'] = net['http_proxy']
+    if net['https_proxy']:
+        proxies['https'] = net['https_proxy']
+    if proxies:
+        session.proxies.update(proxies)
+
+    # Verification precedence: explicit CA bundle > disable verify flag > default True
+    if net['ca_bundle_path']:
+        session.verify = net['ca_bundle_path']
+    else:
+        session.verify = net['verify_ssl']
+
+    retry = Retry(
+        total=3, connect=3, read=3, backoff_factor=1.5,
+        status_forcelist=[429, 500, 502, 503, 504], allowed_methods=['GET'],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
+    return session
+
+
+def _diagnose_connection(net):
+    """Runs a small ladder of checks and returns (ok: bool, message: str)
+    describing exactly which layer is failing, so the fix is obvious instead
+    of guessing from a generic 'connection error'."""
+    session = _build_session(net)
+    steps = []
+
+    # Step 1: can we reach anything at all through the configured proxy?
+    try:
+        r = session.get('https://www.google.com', timeout=10)
+        steps.append(f"✅ Outbound HTTPS through proxy works (status {r.status_code}).")
+    except requests.exceptions.ProxyError as e:
+        return False, (
+            "❌ Proxy connection failed at the proxy itself.\n\n"
+            f"Details: {e}\n\n"
+            "This usually means: wrong proxy host/port, the proxy requires "
+            "authentication (try `http://user:pass@proxyhost:port`), or the VM "
+            "can't reach the proxy host on that port (check with your network team)."
+        )
+    except requests.exceptions.SSLError as e:
+        return False, (
+            "❌ TLS/SSL certificate verification failed.\n\n"
+            f"Details: {e}\n\n"
+            "Your corporate proxy is very likely doing TLS inspection (MITM), which "
+            "swaps in its own certificate. Fix: download your corporate root CA "
+            "certificate (.pem/.crt, ask your IT/security team) and upload it below "
+            "in 'Corporate CA bundle', or as a quick unblock, temporarily disable "
+            "SSL verification (not recommended for anything sensitive)."
+        )
+    except requests.exceptions.ConnectTimeout as e:
+        return False, (
+            "❌ Connection timed out reaching the proxy or the internet.\n\n"
+            f"Details: {e}\n\n"
+            "Check that the proxy host/port is correct and reachable from this VM "
+            "(e.g. `curl -v -x <proxy> https://www.google.com` from a terminal), "
+            "and that outbound firewall rules allow this VM to reach the proxy."
+        )
+    except requests.exceptions.ConnectionError as e:
+        return False, (
+            "❌ Could not establish a connection at all.\n\n"
+            f"Details: {e}\n\n"
+            "If no proxy is configured, the VM's network may require one — ask your "
+            "network team for the proxy host/port and enter it below. If a proxy IS "
+            "configured, double-check the host/port for typos."
+        )
+    except Exception as e:
+        return False, f"❌ Unexpected error during connectivity check: {e}"
+
+    # Step 2: can we reach Google Sheets specifically (some proxies allow
+    # general web but block/whitelist specific domains)?
+    try:
+        r = session.get('https://docs.google.com', timeout=10)
+        steps.append(f"✅ docs.google.com is reachable (status {r.status_code}).")
+    except Exception as e:
+        steps.append(f"⚠️ General internet works, but docs.google.com specifically failed: {e}. "
+                      f"Your proxy may whitelist domains — ask IT to allow docs.google.com and googleusercontent.com.")
+        return False, "\n".join(steps)
+
+    return True, "\n".join(steps) + "\n\nConnectivity looks good — the sheet load should work now."
+
 
 def _clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [c.strip() for c in df.columns]
@@ -89,14 +204,40 @@ def _extract_sheet_id(share_url: str) -> str:
 
 
 @st.cache_data(ttl=300, show_spinner='Fetching latest data from Google Sheets...')
-def load_sheet_from_url(share_url: str):
+def load_sheet_from_url(share_url: str, net: dict):
     sheet_id = _extract_sheet_id(share_url)
     csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv'
-    resp = requests.get(csv_url, timeout=20)
+    session = _build_session(net)
+
+    try:
+        resp = session.get(csv_url, timeout=20)
+    except requests.exceptions.SSLError as e:
+        raise RuntimeError(
+            'SSL certificate verification failed — your corporate proxy is likely doing '
+            'TLS inspection. Go to Data source → Proxy / SSL settings and either upload your '
+            f'corporate CA bundle or disable SSL verification. Raw error: {e}'
+        )
+    except requests.exceptions.ProxyError as e:
+        raise RuntimeError(
+            'Could not connect through the configured proxy. Check the proxy host/port '
+            f'in Data source → Proxy / SSL settings (include username:password if the proxy '
+            f'needs auth). Raw error: {e}'
+        )
+    except requests.exceptions.ConnectTimeout as e:
+        raise RuntimeError(
+            f'Connection to the proxy/internet timed out. Raw error: {e}'
+        )
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError(
+            'Could not establish a connection. If this VM sits behind a corporate proxy, '
+            f'set the proxy host/port in Data source → Proxy / SSL settings. Raw error: {e}'
+        )
+
     if resp.status_code != 200 or resp.text.strip().startswith('<'):
         raise RuntimeError(
             'Could not download the sheet as CSV. Make sure sharing is set to '
-            '"Anyone with the link" → Viewer (File → Share → General access).'
+            '"Anyone with the link" → Viewer (File → Share → General access). '
+            f'(HTTP status: {resp.status_code})'
         )
     df = pd.read_csv(io.StringIO(resp.text))
     return _clean_columns(df)
@@ -234,10 +375,11 @@ if 'source_mode' not in st.session_state:
 
 df = None
 load_error = None
+net_settings = _get_network_settings()
 
 if st.session_state['source_mode'] == 'Google Sheet link':
     try:
-        df = load_sheet_from_url(st.session_state['sheet_url'])
+        df = load_sheet_from_url(st.session_state['sheet_url'], net_settings)
         st.session_state['last_updated'] = datetime.now()
     except Exception as e:
         load_error = str(e)
@@ -310,6 +452,71 @@ if page == 'Data source':
                     unsafe_allow_html=True)
 
     st.caption('Expected columns: ' + ', '.join(REQUIRED_COLS))
+
+    st.write("")
+    with st.expander('🌐 Proxy / SSL settings (corporate network)', expanded=bool(load_error)):
+        st.caption(
+            'If this app runs on a VM behind a corporate proxy, outbound requests to '
+            'Google Sheets can fail. Configure the proxy and/or corporate CA cert here, '
+            'or run the test below to pinpoint what\'s failing.'
+        )
+
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            http_proxy = st.text_input(
+                'HTTP proxy', value=st.session_state.get('net_http_proxy', ''),
+                placeholder='http://user:pass@proxyhost:8080',
+                help='Leave blank to use the VM\'s HTTP_PROXY env var, if set.'
+            )
+        with pc2:
+            https_proxy = st.text_input(
+                'HTTPS proxy', value=st.session_state.get('net_https_proxy', ''),
+                placeholder='http://user:pass@proxyhost:8080',
+                help='Leave blank to use the VM\'s HTTPS_PROXY env var, if set. '
+                     'Usually the same value as the HTTP proxy above.'
+            )
+        st.session_state['net_http_proxy'] = http_proxy
+        st.session_state['net_https_proxy'] = https_proxy
+
+        ca_file = st.file_uploader(
+            'Corporate CA bundle (.pem / .crt) — needed if the proxy does TLS inspection',
+            type=['pem', 'crt', 'cer']
+        )
+        if ca_file is not None:
+            ca_path = os.path.join(tempfile.gettempdir(), 'corporate_ca_bundle.pem')
+            with open(ca_path, 'wb') as f:
+                f.write(ca_file.getvalue())
+            st.session_state['net_ca_bundle_path'] = ca_path
+            st.success(f'CA bundle saved and will be used for verification: {ca_path}')
+
+        if st.session_state.get('net_ca_bundle_path'):
+            cc1, cc2 = st.columns([3, 1])
+            with cc1:
+                st.caption(f"Currently using CA bundle: {st.session_state['net_ca_bundle_path']}")
+            with cc2:
+                if st.button('Clear CA bundle'):
+                    st.session_state['net_ca_bundle_path'] = ''
+                    st.rerun()
+
+        verify_ssl = st.checkbox(
+            '⚠️ Disable SSL verification (only as a last resort / quick unblock — '
+            'not recommended, especially outside a trusted network)',
+            value=not st.session_state.get('net_verify_ssl', True)
+        )
+        st.session_state['net_verify_ssl'] = not verify_ssl
+
+        st.write("")
+        if st.button('🔧 Test connection'):
+            with st.spinner('Running connectivity checks...'):
+                ok, msg = _diagnose_connection(_get_network_settings())
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+
+        if st.button('Apply & refresh data'):
+            load_sheet_from_url.clear()
+            st.rerun()
 
 # -----------------------------------------------------------------------
 # PAGE: OVERVIEW
