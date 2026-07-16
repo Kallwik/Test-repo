@@ -1,5 +1,5 @@
 name: Log GitHub Actions to Google Sheets
-
+ 
 on:
   workflow_dispatch:
 
